@@ -200,7 +200,7 @@ var AccountService = class extends BaseService {
    */
   filterNonZeroBalances(balances) {
     return balances.filter(
-      (balance) => parseFloat(balance.free) > 0 || parseFloat(balance.locked) > 0
+      (balance) => Number.parseFloat(balance.free) > 0 || Number.parseFloat(balance.locked) > 0
     );
   }
   /**
@@ -234,7 +234,7 @@ var AccountService = class extends BaseService {
       if (!balance) {
         return false;
       }
-      const available = parseFloat(balance.free);
+      const available = Number.parseFloat(balance.free);
       return available >= required;
     } catch (error) {
       throw this.handleError(error, `Balance check for ${asset}`);
@@ -283,7 +283,7 @@ var PriceService = class extends BaseService {
    * Format price for display
    */
   static formatPrice(price) {
-    const numPrice = typeof price === "string" ? parseFloat(price) : price;
+    const numPrice = typeof price === "string" ? Number.parseFloat(price) : price;
     return new Intl.NumberFormat("en-US", {
       style: "decimal",
       minimumFractionDigits: 2,
@@ -368,7 +368,7 @@ var TradeService = class extends BaseService {
     const minNotional = this.getMinNotional(symbolInfo.filters);
     if (!minNotional) return;
     const notionalValue = price ? quantity * price : quantity;
-    if (parseFloat(minNotional) > notionalValue) {
+    if (Number.parseFloat(minNotional) > notionalValue) {
       throw new MinNotionalError(minNotional);
     }
   }
@@ -445,9 +445,10 @@ var priceCheck = {
   // Public endpoint
   handler: async (runtime, message, state, _options, callback) => {
     try {
-      state = !state ? await runtime.composeState(message) : await runtime.updateRecentMessageState(state);
+      let localState = state;
+      localState = !localState ? await runtime.composeState(message) : await runtime.updateRecentMessageState(localState);
       const context = composeContext({
-        state,
+        state: localState,
         template: priceCheckTemplate
       });
       const rawContent = await generateObjectDeprecated({
@@ -479,7 +480,7 @@ var priceCheck = {
     } catch (error) {
       elizaLogger2.error("Error in price check:", error);
       if (callback) {
-        const errorMessage = error.message.includes("Invalid API key") ? "Unable to connect to Binance API" : error.message.includes("Invalid symbol") ? `Sorry, could not find price for the cryptocurrency symbol you provided` : `Sorry, I encountered an error: ${error.message}`;
+        const errorMessage = error.message.includes("Invalid API key") ? "Unable to connect to Binance API" : error.message.includes("Invalid symbol") ? "Sorry, could not find price for the cryptocurrency symbol you provided" : `Sorry, I encountered an error: ${error.message}`;
         callback({
           text: errorMessage,
           content: { error: error.message }
@@ -600,18 +601,19 @@ var spotBalance = {
     try {
       await validateBinanceConfig(runtime);
       return true;
-    } catch (error) {
+    } catch {
       return false;
     }
   },
   handler: async (runtime, message, state, _options, callback) => {
-    if (!state) {
-      state = await runtime.composeState(message);
+    let currentState = state;
+    if (!currentState) {
+      currentState = await runtime.composeState(message);
     } else {
-      state = await runtime.updateRecentMessageState(state);
+      currentState = await runtime.updateRecentMessageState(currentState);
     }
     const balanceContext = composeContext2({
-      state,
+      state: currentState,
       template: spotBalanceTemplate
     });
     const content = await generateObjectDeprecated2({
@@ -777,9 +779,14 @@ var spotTrade = {
   handler: async (runtime, message, state, _options, callback) => {
     let content;
     try {
-      state = !state ? await runtime.composeState(message) : await runtime.updateRecentMessageState(state);
+      let currentState = state;
+      if (!currentState) {
+        currentState = await runtime.composeState(message);
+      } else {
+        currentState = await runtime.updateRecentMessageState(currentState);
+      }
       const context = composeContext3({
-        state,
+        state: currentState,
         template: spotTradeTemplate
       });
       content = await generateObjectDeprecated3({
@@ -788,7 +795,7 @@ var spotTrade = {
         modelClass: ModelClass3.SMALL
       });
       if (content && typeof content.quantity === "string") {
-        content.quantity = parseFloat(content.quantity);
+        content.quantity = Number.parseFloat(content.quantity);
       }
       const parseResult = SpotTradeSchema.safeParse(content);
       if (!parseResult.success) {
@@ -802,7 +809,7 @@ var spotTrade = {
       });
       const tradeResult = await binanceService.executeTrade(content);
       if (callback) {
-        const orderType = content.type === "MARKET" ? "market" : `limit at ${BinanceService.formatPrice(content.price)}`;
+        const orderType = content.type === "MARKET" ? "market" : content.price ? `limit at ${BinanceService.formatPrice(content.price)}` : "market";
         callback({
           text: `Successfully placed a ${orderType} order to ${content.side.toLowerCase()} ${content.quantity} ${content.symbol}
 Order ID: ${tradeResult.orderId}
