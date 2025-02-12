@@ -11,6 +11,7 @@ export default defineConfig({
     bundle: true,
     minify: false,
     external: [
+        "@elizaos/core",
         "@binance/connector",
         "events",
         "crypto",
